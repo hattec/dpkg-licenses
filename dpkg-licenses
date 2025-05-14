@@ -18,59 +18,125 @@
 #
 #    You should have received a copy of the GNU General Public License
 #    along with dpkg-licenses.  If not, see <http://www.gnu.org/licenses/>.
+#
+#    Fork maintained at: https://github.com/nightsparc/dpkg-licenses
+#    Modified to add flexible output support (2025)
+#
 
 set -e
 
-CSV=0
+OUTPUT_FILE=""
+MARKDOWN_FILE=""
+SILENT=0
 
-case "$1" in
-  --help|-h)
-    cat >&2 <<.e
-Lists all installed packages (dpkg -l similar format) and prints their licenses
+help() {
+  cat >&2 <<EOF
+Lists all installed packages and their licenses.
 
-Usage: $0 [-c]
+Usage: $0 [OPTIONS]
 
 Options:
-    -c, --csv    use comma separated values (CSV) output format
-    -h, --help   print this message
-.e
-    exit 1
-    ;;
-  --csv|-c)
-    CSV=1
-    ;;
-esac
+    -o, --output <file>       Write main output (CSV format) to <file>
+    -m, --markdown <file>     Additionally write Markdown table to <file>
+    -s, --silent              Suppress stdout output
+    -h, --help                Show this help and exit
 
-SCRIPTLIB=$(dirname $(readlink -f "$0"))/lib/
+Examples:
+    $0
+        Show output in pretty table format (stdout)
+
+    $0 -o sbom.csv
+        Write CSV output to sbom.csv + print to stdout
+
+    $0 -m sbom.md
+        Write Markdown output to sbom.md + print to stdout
+
+    $0 -o sbom.csv -m sbom.md -s
+        Write CSV and Markdown, no stdout
+EOF
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output|-o)
+      OUTPUT_FILE="$2"
+      shift 2
+      ;;
+    --markdown|-m)
+      MARKDOWN_FILE="$2"
+      shift 2
+      ;;
+    --silent|-s)
+      SILENT=1
+      shift
+      ;;
+    -h|--help)
+      help
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      help
+      exit 1
+      ;;
+  esac
+done
+
+SCRIPTLIB=$(dirname "$(readlink -f "$0")")/lib/
 test -d "$SCRIPTLIB"
 
-if [[ $CSV -eq 1 ]]
-then 
-  printf "\"St\",\"Name\",\"Version\",\"Arch\",\"Description\",\"Licenses\"\n"
-else 
-  format='%-2s  %-30s %-30s %-6s %-60s %s\n'
-  printf "$format" "St" "Name" "Version" "Arch" "Description" "Licenses"
-  printf "$format" "--" "----" "-------" "----" "-----------" "--------"
-fi
+# Output header for main output
+main_out() {
+  if [[ -n "$OUTPUT_FILE" ]]; then
+    printf "\"St\",\"Name\",\"Version\",\"Arch\",\"Description\",\"Licenses\"\n" > "$OUTPUT_FILE"
+  fi
+  if [[ $SILENT -eq 0 ]]; then
+    format='%-2s  %-30s %-30s %-6s %-60s %s\n'
+    printf "$format" "St" "Name" "Version" "Arch" "Description" "Licenses"
+    printf "$format" "--" "----" "-------" "----" "-----------" "--------"
+  fi
+}
 
-COLUMNS=2000 dpkg -l | grep '^.[iufhwt]' | while read pState package pVer pArch pDesc; do
-  license=
+# Output header for markdown
+md_out() {
+  echo "| Status | Name | Version | Arch | Description | License |" > "$MARKDOWN_FILE"
+  echo "|--------|------|---------|------|-------------|---------|" >> "$MARKDOWN_FILE"
+}
+
+# Emit row for all targets
+emit_row() {
+  local state="$1" name="$2" ver="$3" arch="$4" desc="$5" license="$6"
+
+  if [[ -n "$OUTPUT_FILE" ]]; then
+    printf "\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"\n" \
+      "$state" "$name" "$ver" "$arch" "$desc" "$license" >> "$OUTPUT_FILE"
+  fi
+  if [[ $SILENT -eq 0 ]]; then
+    printf "%-2s  %-30s %-30s %-6s %-60s %s\n" \
+      "$state" "${name:0:30}" "${ver:0:30}" "${arch:0:6}" "${desc:0:60}" "$license"
+  fi
+  if [[ -n "$MARKDOWN_FILE" ]]; then
+    printf "| \`%s\` | \`%s\` | \`%s\` | \`%s\` | %s | %s |\n" \
+      "$state" "$name" "$ver" "$arch" "$desc" "$license" >> "$MARKDOWN_FILE"
+  fi
+}
+
+main_out
+[[ -n "$MARKDOWN_FILE" ]] && md_out
+
+COLUMNS=2000 dpkg -l | grep '^.[iufhwt]' | while read -r pState package pVer pArch pDesc; do
+  license=""
   for method in "$SCRIPTLIB"/reader*; do
     [ -f "$method" ] || continue
     license=$("$method" "$package")
     [ $? -eq 0 ] || exit 1
     [ -n "$license" ] || continue
-    # remove line breaks and spaces
     license=$(echo "$license" | tr '\n' ' ' | sed -r -e 's/ +/ /g' -e 's/^ +//' -e 's/ +$//')
     [ -z "$license" ] || break
   done
   [ -n "$license" ] || license='unknown'
 
-  if [[ $CSV -eq 1 ]]
-  then
-    printf "\"$pState\",\"$package\",\"$pVer\",\"$pArch\",\"$pDesc\",\"$license\"\n"
-  else
-    printf "$format" "$pState" "${package:0:30}" "${pVer:0:30}" "${pArch:0:6}" "${pDesc:0:60}" "$license"
-  fi 
+  emit_row "$pState" "$package" "$pVer" "$pArch" "$pDesc" "$license"
 done
 
