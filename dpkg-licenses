@@ -17,9 +17,9 @@
 #    GNU General Public License for more details.
 #
 #    You should have received a copy of the GNU General Public License
-#    along with dpkg-licenses.  If not, see <http://www.gnu.org/licenses/>.
+#    along with dpkg-licenses. If not, see <http://www.gnu.org/licenses/>.
 #
-#    Fork maintained at: https://github.com/nightsparc/dpkg-licenses
+#    Fork maintained at: https://github.com/hattec/dpkg-licenses
 #    Modified to add flexible output support (2025)
 #
 
@@ -28,6 +28,7 @@ set -e
 OUTPUT_FILE=""
 MARKDOWN_FILE=""
 SILENT=0
+NO_UNKNOWNS=0
 
 help() {
   cat >&2 <<EOF
@@ -39,6 +40,7 @@ Options:
     -o, --output <file>       Write main output (CSV format) to <file>
     -m, --markdown <file>     Additionally write Markdown table to <file>
     -s, --silent              Suppress stdout output
+    -n, --no-unknowns         Do not generate unknown-licenses output files
     -h, --help                Show this help and exit
 
 Examples:
@@ -51,12 +53,15 @@ Examples:
     $0 -m sbom.md
         Write Markdown output to sbom.md + print to stdout
 
-    $0 -o sbom.csv -m sbom.md -s
-        Write CSV and Markdown, no stdout
+    $0 -o sbom.csv -m sbom.md
+        Write CSV and Markdown output at the same time
+
+    $0 -o sbom.csv -m sbom.md -n -s
+        Write both formats silently, without unknown-licenses output
 EOF
 }
 
-# Parse arguments
+# Argument parsing
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --output|-o)
@@ -69,6 +74,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --silent|-s)
       SILENT=1
+      shift
+      ;;
+    --no-unknowns|-n)
+      NO_UNKNOWNS=1
       shift
       ;;
     -h|--help)
@@ -86,44 +95,32 @@ done
 SCRIPTLIB=$(dirname "$(readlink -f "$0")")/lib/
 test -d "$SCRIPTLIB"
 
-# Output header for main output
-main_out() {
-  if [[ -n "$OUTPUT_FILE" ]]; then
-    printf "\"St\",\"Name\",\"Version\",\"Arch\",\"Description\",\"Licenses\"\n" > "$OUTPUT_FILE"
-  fi
-  if [[ $SILENT -eq 0 ]]; then
-    format='%-2s  %-30s %-30s %-6s %-60s %s\n'
-    printf "$format" "St" "Name" "Version" "Arch" "Description" "Licenses"
-    printf "$format" "--" "----" "-------" "----" "-----------" "--------"
-  fi
-}
+UNKNOWN_CSV="unknown-licenses.csv"
+UNKNOWN_MD="unknown-licenses.md"
 
-# Output header for markdown
-md_out() {
+# Init headers
+if [[ -n "$OUTPUT_FILE" ]]; then
+  echo "\"St\",\"Name\",\"Version\",\"Arch\",\"Description\",\"Licenses\"" > "$OUTPUT_FILE"
+fi
+
+if [[ -n "$MARKDOWN_FILE" ]]; then
   echo "| Status | Name | Version | Arch | Description | License |" > "$MARKDOWN_FILE"
   echo "|--------|------|---------|------|-------------|---------|" >> "$MARKDOWN_FILE"
-}
+fi
 
-# Emit row for all targets
-emit_row() {
-  local state="$1" name="$2" ver="$3" arch="$4" desc="$5" license="$6"
+if [[ $SILENT -eq 0 ]]; then
+  printf '%-2s  %-30s %-30s %-6s %-60s %s\n' "St" "Name" "Version" "Arch" "Description" "Licenses"
+  printf '%-2s  %-30s %-30s %-6s %-60s %s\n' "--" "----" "-------" "----" "-----------" "--------"
+fi
 
-  if [[ -n "$OUTPUT_FILE" ]]; then
-    printf "\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"\n" \
-      "$state" "$name" "$ver" "$arch" "$desc" "$license" >> "$OUTPUT_FILE"
-  fi
-  if [[ $SILENT -eq 0 ]]; then
-    printf "%-2s  %-30s %-30s %-6s %-60s %s\n" \
-      "$state" "${name:0:30}" "${ver:0:30}" "${arch:0:6}" "${desc:0:60}" "$license"
-  fi
-  if [[ -n "$MARKDOWN_FILE" ]]; then
-    printf "| \`%s\` | \`%s\` | \`%s\` | \`%s\` | %s | %s |\n" \
-      "$state" "$name" "$ver" "$arch" "$desc" "$license" >> "$MARKDOWN_FILE"
-  fi
-}
-
-main_out
-[[ -n "$MARKDOWN_FILE" ]] && md_out
+# Init unknown license files if enabled
+if [[ $NO_UNKNOWNS -eq 0 ]]; then
+  [[ -n "$OUTPUT_FILE" ]] && echo "\"Name\",\"Version\",\"Description\"" > "$UNKNOWN_CSV"
+  [[ -n "$MARKDOWN_FILE" ]] && {
+    echo "| Name | Version | Description |" > "$UNKNOWN_MD"
+    echo "|------|---------|-------------|" >> "$UNKNOWN_MD"
+  }
+fi
 
 COLUMNS=2000 dpkg -l | grep '^.[iufhwt]' | while read -r pState package pVer pArch pDesc; do
   license=""
@@ -137,6 +134,15 @@ COLUMNS=2000 dpkg -l | grep '^.[iufhwt]' | while read -r pState package pVer pAr
   done
   [ -n "$license" ] || license='unknown'
 
-  emit_row "$pState" "$package" "$pVer" "$pArch" "$pDesc" "$license"
+  # Output main result
+  [[ -n "$OUTPUT_FILE" ]] && echo "\"$pState\",\"$package\",\"$pVer\",\"$pArch\",\"$pDesc\",\"$license\"" >> "$OUTPUT_FILE"
+  [[ -n "$MARKDOWN_FILE" ]] && echo "| \`$pState\` | \`$package\` | \`$pVer\` | \`$pArch\` | $pDesc | $license |" >> "$MARKDOWN_FILE"
+  [[ $SILENT -eq 0 ]] && printf '%-2s  %-30s %-30s %-6s %-60s %s\n' "$pState" "${package:0:30}" "${pVer:0:30}" "${pArch:0:6}" "${pDesc:0:60}" "$license"
+
+  # Unknown license reporting
+  if [[ "$license" == "unknown" && $NO_UNKNOWNS -eq 0 ]]; then
+    [[ -n "$OUTPUT_FILE" ]] && echo "\"$package\",\"$pVer\",\"$pDesc\"" >> "$UNKNOWN_CSV"
+    [[ -n "$MARKDOWN_FILE" ]] && echo "| \`$package\` | \`$pVer\` | $pDesc |" >> "$UNKNOWN_MD"
+  fi
 done
 
