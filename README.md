@@ -42,19 +42,53 @@ Sample output
     ii  anacron          2.3-20ubuntu1         amd64  cron-like program that doesn't go by time     GPL-2
 
 CSV format
--------------
+----------
 
-To get parsable format without shortened fields, use `--csv` (`-c`) flag:
+To get parsable format without shortened fields, use the `--output` (`-o`) flag:
 
-    $ ./dpkg-licenses -c
+    $ ./dpkg-licenses -o sbom.csv
     "St","Name","Version","Arch","Description","Licenses"
     "ii","accountsservice","0.6.35-0ubuntu7.2","amd64","query and manipulate user account information","GPL-2+ GPL-3+"
     "ii","acl","2.2.52-1","amd64","Access control list utilities","GPL LGPL-2.1"
     "ii","acpid","1:2.0.21-1ubuntu2","amd64","Advanced Configuration and Power Interface event daemon","GPL-2"
     ...
 
+Markdown output
+---------------
+
+To generate a Markdown-formatted table for reports or documentation, use the `--markdown` (`-m`) flag:
+
+    $ ./dpkg-licenses -m sbom.md
+
+This will produce a table like:
+
+    | Status | Name | Version | Arch | Description | License |
+    |--------|------|---------|------|-------------|---------|
+    | `ii`   | `bash` | `5.2.21-2ubuntu1` | `amd64` | GNU Bourne Again SHell | GPL-3+ |
+
+Markdown output and CSV output can be used at the same time:
+
+    $ ./dpkg-licenses -o sbom.csv -m sbom.md
+
+Package Status Codes
+---------------------
+
+The `St` (Status) column corresponds to the Debian package state from `dpkg -l`. It uses a two-character code:
+
+| Code | Meaning                                   |
+|------|-------------------------------------------|
+| `ii` | Package is **installed** and OK           |
+| `rc` | Package was **removed**, but **config files remain** |
+| `un` | Package is **not installed** (unknown)    |
+| `iF` | Package is installed but **failed configuration** |
+| `hi` | Package is **held** for upgrade or removal |
+| `pn` | Package is **purged**, never installed     |
+| ...  | Additional states possible (see `man dpkg-query`) |
+
+These codes are documented in the output of `dpkg -l` and `dpkg-query`.
+
 Output quality
--------------
+--------------
 
 The output quality on an average workspace Ubuntu installation looks like this:
 
@@ -75,6 +109,11 @@ However, there is still a lot of garbage:
     ii  fonts-opensymbol  2:102.6+LibO4.2.8-0ubuntu3  all    OpenSymbol TrueType font                             Apache-2.0 BSD-3-clause BSD-4-clause CDDL-1.0 CDDL-1.0 | GPPL-2 GPL GPL-1 GPL-2 GPL-2+ GPL-2 | LGPL-2.1 | MPL-1.1 LGPL LGPL-2+ LGPL2+ LGPL-2.1 LGPL-2 | Apache-2.0 LGPL-3 LGPL | Apache-2.0 MIT MIT/X MPL-1.1 MPL-1.1 | GPL-2 | LGPL-2 MPL-1.1 | GPL-3+ | LGPL-3+ MPL-1.1 | LGPL-2.1 MPL 1.1 | LGPL-2+ | GPL-2+ MPL-2.0 other PSF-2 public-domain W3C Zlib
     ii  ghostscript       9.10~dfsg-0ubuntu10.4       amd64  interpreter for the PostScript language and for PDF  AFPL AFPL~AFPL AGPL-3+ Apache-2.0 BSD-3-Clause BSD-3-Clause~Adobe Expat Expat~Ghostgum Expat~SunSoft Expat~SunSoft with SunSoft exception GAP~configure GPL GPL-2+ GPL-2+ or AFPL~AFPL GPL-2+ with Autoconf exception GPL-2+ with Libtool exception GPL-2+~you GPL-2+~you or AFPL GPL-2+~you or AFPL~AFPL GPL-3+ GPL-3+~Artifex GPL~CUPS GPL~LIPS GPL~URW GPL~URW with font exception icclib LGPL-2.1+ LGPL-2.1+ and LGPL-2.1+~program-in-file LGPL-2.1~pcl3 LGPL-2.1+~program-in-file NTP~Lucent NTP~Open NTP~WSU other PD Unicode UNKNOWN ZLIB
 
+Changelog
+---------
+
+See [CHANGELOG.md](./CHANGELOG.md) for a list of recent changes and improvements.
+
 Copyright
 ---------
 
@@ -93,4 +132,7 @@ Copyright
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with dpkg-licenses.  If not, see <http://www.gnu.org/licenses/>.
+    along with dpkg-licenses. If not, see <http://www.gnu.org/licenses/>.
+
+    Fork maintained at: https://github.com/nightsparc/dpkg-licenses
+    Modified to add flexible output support (2025)
